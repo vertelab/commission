@@ -69,10 +69,10 @@ class Settlement(models.Model):
             'context': {'settlement_ids': self.ids}
         }
 
-    def _prepare_invoice_header(self, settlement, journal, date=False):
+    def _prepare_invoice_header(self, agent, journal, date=False):
         invoice_obj = self.env['account.invoice']
         invoice_vals = {
-            'partner_id': settlement.agent.id,
+            'partner_id': agent.id,
             'type': ('in_invoice' if journal.type == 'purchase' else
                      'in_refund'),
             'date_invoice': date,
@@ -111,9 +111,16 @@ class Settlement(models.Model):
                                                                 'en_US'))])
         date_from = fields.Date.from_string(settlement.date_from)
         date_to = fields.Date.from_string(settlement.date_to)
-        invoice_line_vals['name'] += "\n" + _('Period: from %s to %s') % (
-            date_from.strftime(lang.date_format),
-            date_to.strftime(lang.date_format))
+        # Line names can be configured through product description
+        # Example: 'Period: from {date_from} to {date_to}'
+        #~ raise Warning(self.env['sale.order'].search_read(
+                #~ [('invoice_ids', '=', settlement.lines[0].invoice.id)], ['name']))
+        invoice_line_vals['name'] = (product.description_sale or invoice_line_vals['name']).format(
+            date_from=date_from.strftime(lang.date_format),
+            date_to=date_to.strftime(lang.date_format),
+            invoice=settlement.lines[0].invoice.name,
+            sale_order=', '.join([x['name'] for x in self.env['sale.order'].search_read(
+                [('invoice_ids', '=', settlement.lines[0].invoice.id)], ['name'])]))
         return invoice_line_vals
 
     def _add_extra_invoice_lines(self, settlement):
@@ -126,29 +133,28 @@ class Settlement(models.Model):
     @api.multi
     def make_invoices(self, journal, refund_journal, product, date=False):
         invoice_obj = self.env['account.invoice']
-        for settlement in self:
-            # select the proper journal according to settlement's amount
+        for agent in self.mapped('agent'):
+            agent_settlements = self.filtered(lambda r: r.agent == agent)
+            total = sum(agent_settlements.mapped('total'))
+            # select the proper journal according to settlements' amount
             # considering _add_extra_invoice_lines sum of values
-            extra_invoice_lines = self._add_extra_invoice_lines(settlement)
-            extra_total = sum(x['price_unit'] for x in extra_invoice_lines)
-            invoice_journal = (journal if
-                               (settlement.total + extra_total) >= 0 else
-                               refund_journal)
-            invoice_vals = self._prepare_invoice_header(
-                settlement, invoice_journal, date=date)
+            invoice_journal = (journal if total >= 0 else refund_journal)
+            invoice_vals = self._prepare_invoice_header(agent, invoice_journal, date=date)
             invoice_lines_vals = []
-            invoice_lines_vals.append(self._prepare_invoice_line(
-                settlement, invoice_vals, product))
-            invoice_lines_vals += extra_invoice_lines
+            for settlement in agent_settlements:
+                invoice_lines_vals += [self._prepare_invoice_line(
+                    settlement, invoice_vals, product)]
+                invoice_lines_vals += self._add_extra_invoice_lines(settlement)
+                total += sum(x['price_unit'] for x in invoice_lines_vals)
             # invert invoice values if it's a refund
             if invoice_vals['type'] == 'in_refund':
                 for line in invoice_lines_vals:
                     line['price_unit'] = -line['price_unit']
-            invoice_vals['invoice_line'] = [(0, 0, x)
-                                            for x in invoice_lines_vals]
+            invoice_vals['invoice_line'] = [(0, 0, x) for x in invoice_lines_vals]
             invoice = invoice_obj.create(invoice_vals)
-            settlement.state = 'invoiced'
-            settlement.invoice = invoice.id
+            for settlement in agent_settlements:
+                settlement.state = 'invoiced'
+                settlement.invoice = invoice.id
 
 
 class SettlementLine(models.Model):

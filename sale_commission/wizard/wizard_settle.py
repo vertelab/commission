@@ -67,40 +67,30 @@ class SaleCommissionMakeSettle(models.TransientModel):
                  ('agent', '=', agent.id),
                  ('settled', '=', False)], order='invoice_date')
             for company in agent_lines.mapped('invoice_line.company_id'):
-                for agent_lines_company in agent_lines.filtered(
-                        lambda r: r.invoice_line.company_id == company):
-                    if agent_lines_company:
-                        pos = 0
-                        sett_to = fields.Date.to_string(date(year=1900,
-                                                             month=1,
-                                                             day=1))
-                        while pos < len(agent_lines_company):
-                            if (agent.commission.invoice_state == 'paid' and
-                                    agent_lines_company[pos].invoice.state !=
-                                    'paid'):
-                                pos += 1
-                                continue
-                            if agent_lines_company[pos].invoice_date > sett_to:
-                                sett_from = self._get_period_start(
-                                    agent,
-                                    agent_lines_company[pos].invoice_date)
-                                sett_to = fields.Date.to_string(
-                                    self._get_next_period_date(agent,
-                                                               sett_from) -
-                                    timedelta(days=1))
-                                sett_from = fields.Date.to_string(sett_from)
-                                settlement = settlement_obj.create(
-                                    {'agent': agent.id,
-                                     'date_from': sett_from,
-                                     'date_to': sett_to,
-                                     'company_id': company.id})
-                                settlement_ids.append(settlement.id)
+                agent_lines_company = agent_lines.filtered(
+                        lambda r: r.invoice_line.company_id == company)
+                # Group settlement lines per invoice.
+                for invoice in agent_lines_company.mapped('invoice'):
+                    if (agent.commission.invoice_state == 'paid' and
+                            invoice.state != 'paid'):
+                        continue
+                    sett_from = self._get_period_start(
+                        agent, invoice.date_invoice)
+                    sett_to = fields.Date.to_string(
+                        self._get_next_period_date(agent, sett_from) - timedelta(days=1))
+                    sett_from = fields.Date.to_string(sett_from)
+                    settlement = settlement_obj.create(
+                        {'agent': agent.id,
+                         'date_from': sett_from,
+                         'date_to': sett_to,
+                         'company_id': company.id})
+                    settlement_ids.append(settlement.id)
+                    for agent_lines_invoice in agent_lines_company.filtered(
+                            lambda r: r.invoice == invoice):
+                        for line in agent_lines_invoice:
                             settlement_line_obj.create(
                                 {'settlement': settlement.id,
-                                 'agent_line': [(6, 0,
-                                                 [agent_lines_company[pos].id])
-                                                ]})
-                            pos += 1
+                                 'agent_line': [(6, 0, [line.id])]})
 
         # go to results
         if len(settlement_ids):
