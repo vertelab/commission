@@ -83,7 +83,8 @@ class SaleCommissionMakeSettle(models.TransientModel):
                         {'agent': agent.id,
                          'date_from': sett_from,
                          'date_to': sett_to,
-                         'company_id': company.id})
+                         'company_id': company.id,
+                         'currency_id': invoice.currency_id.id})
                     settlement_ids.append(settlement.id)
                     for agent_lines_invoice in agent_lines_company.filtered(
                             lambda r: r.invoice == invoice):

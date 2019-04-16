@@ -54,7 +54,7 @@ class SaleCommissionMakeInvoice(models.TransientModel):
         self.settlements.make_invoices(
             self.journal, self.refund_journal, self.product, date=self.date)
         # go to results
-        if len(self.settlements):
+        if self.settlements:
             return {
                 'name': _('Created Invoices'),
                 'type': 'ir.actions.act_window',

@@ -134,27 +134,30 @@ class Settlement(models.Model):
     def make_invoices(self, journal, refund_journal, product, date=False):
         invoice_obj = self.env['account.invoice']
         for agent in self.mapped('agent'):
-            agent_settlements = self.filtered(lambda r: r.agent == agent)
-            total = sum(agent_settlements.mapped('total'))
-            # select the proper journal according to settlements' amount
-            # considering _add_extra_invoice_lines sum of values
-            invoice_journal = (journal if total >= 0 else refund_journal)
-            invoice_vals = self._prepare_invoice_header(agent, invoice_journal, date=date)
-            invoice_lines_vals = []
-            for settlement in agent_settlements:
-                invoice_lines_vals += [self._prepare_invoice_line(
-                    settlement, invoice_vals, product)]
-                invoice_lines_vals += self._add_extra_invoice_lines(settlement)
-                total += sum(x['price_unit'] for x in invoice_lines_vals)
-            # invert invoice values if it's a refund
-            if invoice_vals['type'] == 'in_refund':
-                for line in invoice_lines_vals:
-                    line['price_unit'] = -line['price_unit']
-            invoice_vals['invoice_line'] = [(0, 0, x) for x in invoice_lines_vals]
-            invoice = invoice_obj.create(invoice_vals)
-            for settlement in agent_settlements:
-                settlement.state = 'invoiced'
-                settlement.invoice = invoice.id
+            agent_settlements_all_currencies = self.filtered(lambda r: r.agent == agent)
+            for currency in agent_settlements_all_currencies.mapped('currency_id'):
+                agent_settlements = agent_settlements_all_currencies.filtered(lambda r: r.currency_id == currency)
+                total = sum(agent_settlements.mapped('total'))
+                # select the proper journal according to settlements' amount
+                # considering _add_extra_invoice_lines sum of values
+                invoice_journal = (journal if total >= 0 else refund_journal)
+                invoice_vals = self._prepare_invoice_header(agent, invoice_journal, date=date)
+                invoice_vals['currency_id'] = currency.id
+                invoice_lines_vals = []
+                for settlement in agent_settlements:
+                    invoice_lines_vals += [self._prepare_invoice_line(
+                        settlement, invoice_vals, product)]
+                    invoice_lines_vals += self._add_extra_invoice_lines(settlement)
+                    total += sum(x['price_unit'] for x in invoice_lines_vals)
+                # invert invoice values if it's a refund
+                if invoice_vals['type'] == 'in_refund':
+                    for line in invoice_lines_vals:
+                        line['price_unit'] = -line['price_unit']
+                invoice_vals['invoice_line'] = [(0, 0, x) for x in invoice_lines_vals]
+                invoice = invoice_obj.create(invoice_vals)
+                for settlement in agent_settlements:
+                    settlement.state = 'invoiced'
+                    settlement.invoice = invoice.id
 
 
 class SettlementLine(models.Model):
