@@ -115,12 +115,13 @@ class Settlement(models.Model):
         # Example: 'Period: from {date_from} to {date_to}'
         #~ raise Warning(self.env['sale.order'].search_read(
                 #~ [('invoice_ids', '=', settlement.lines[0].invoice.id)], ['name']))
-        invoice_line_vals['name'] = (product.description_sale or invoice_line_vals['name']).format(
-            date_from=date_from.strftime(lang.date_format),
-            date_to=date_to.strftime(lang.date_format),
-            invoice=settlement.lines[0].invoice.name,
-            sale_order=', '.join([x['name'] for x in self.env['sale.order'].search_read(
-                [('invoice_ids', '=', settlement.lines[0].invoice.id)], ['name'])]))
+        # invoice_line_vals['name'] = (product.description_sale or invoice_line_vals['name']).format(
+        #     date_from=date_from.strftime(lang.date_format),
+        #     date_to=date_to.strftime(lang.date_format),
+        #     invoice=settlement.lines[0].invoice.name,
+        #     sale_order=', '.join([x['name'] for x in self.env['sale.order'].search_read(
+        #         [('invoice_ids', '=', settlement.lines[0].invoice.id)], ['name'])]))
+        invoice_line_vals['name'] = settlement.lines[0].invoice.display_name
         return invoice_line_vals
 
     def _add_extra_invoice_lines(self, settlement):
